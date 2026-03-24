@@ -40,12 +40,9 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Build, install, and test
+      - name: Install and test
         run: |
-          uv build
-          uv venv test-env
-          source test-env/bin/activate
-          pip install dist/vpn_mcp-*.whl
-          python -c "from vpn_mcp.server import main; print('Server import OK')"
-          python -c "from vpn_mcp.client import ControlPlaneClient; print('Client import OK')"
-          python -c "from vpn_mcp.fingerprint import get_machine_fingerprint; print('Fingerprint:', get_machine_fingerprint()[:16])"
+          uv sync
+          uv run python -c "from vpn_mcp.server import main; print('Server import OK')"
+          uv run python -c "from vpn_mcp.client import ControlPlaneClient; print('Client import OK')"
+          uv run python -c "from vpn_mcp.fingerprint import get_machine_fingerprint; print('Fingerprint:', get_machine_fingerprint()[:16])"
