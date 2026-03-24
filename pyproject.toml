@@ -1,0 +1,29 @@
+[project]
+name = "vpn-mcp"
+version = "0.3.1"
+description = "VPN MCP server — Internet access for AI coding tools through VPN exit nodes"
+requires-python = ">=3.12"
+dependencies = [
+    "mcp>=1.0.0",
+    "httpx[socks]>=0.27.0",
+    "pydantic>=2.0",
+    "cryptography>=43.0",
+]
+
+[project.urls]
+Homepage = "https://vpn-mcp.net"
+Repository = "https://github.com/cheeeee/vpn-mcp"
+Documentation = "https://vpn-mcp.net/setup"
+
+[project.scripts]
+vpn-mcp = "vpn_mcp.server:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/vpn_mcp"]
+
+[tool.ruff]
+line-length = 120
