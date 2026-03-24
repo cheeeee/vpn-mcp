@@ -1,6 +1,6 @@
 [project]
 name = "vpn-mcp"
-version = "0.3.1"
+version = "0.4.0"
 description = "VPN MCP server — Internet access for AI coding tools through VPN exit nodes"
 requires-python = ">=3.12"
 dependencies = [
