@@ -20,14 +20,11 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install dependencies
-        run: uv sync
-
       - name: Ruff check
-        run: uv run ruff check .
+        run: uvx ruff check .
 
       - name: Ruff format
-        run: uv run ruff format --check .
+        run: uvx ruff format --check .
 
   test:
     name: Smoke test
@@ -43,16 +40,12 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Build and install
+      - name: Build, install, and test
         run: |
           uv build
           uv venv test-env
           source test-env/bin/activate
           pip install dist/vpn_mcp-*.whl
-
-      - name: Import test
-        run: |
-          source test-env/bin/activate
           python -c "from vpn_mcp.server import main; print('Server import OK')"
           python -c "from vpn_mcp.client import ControlPlaneClient; print('Client import OK')"
           python -c "from vpn_mcp.fingerprint import get_machine_fingerprint; print('Fingerprint:', get_machine_fingerprint()[:16])"
