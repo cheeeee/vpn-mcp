@@ -2,6 +2,7 @@
 
 import logging
 import platform
+import random
 import sys
 
 from mcp.server import Server
@@ -182,6 +183,13 @@ def _payment_instructions(address: str, amount: str = "1", network: str = "TON")
     )
 
 
+def _pick_server(servers: list[dict], last_server_id: str | None = None) -> dict:
+    """Weighted random server selection, excluding last used."""
+    candidates = [s for s in servers if s["id"] != last_server_id] or servers
+    weights = [s.get("weight", 1) for s in candidates]
+    return random.choices(candidates, weights=weights, k=1)[0]
+
+
 def _handle_connect(node_id: str) -> str:
     creds = _get_creds()
     if creds is None:
@@ -226,32 +234,71 @@ def _handle_connect(node_id: str) -> str:
             return f"Quota exceeded ({quota.get('percent', 100)}%). Call vpn_activate() to purchase more."
         return f"Connection error: {connect_resp['error']}"
 
-    vless = connect_resp.get("vless", {})
-    ws = connect_resp.get("ws")
+    # Parse server list (new format) or fall back to legacy single-node format.
+    servers = connect_resp.get("servers")
+    if servers:
+        if node_id and any(s["id"] == node_id for s in servers):
+            # User explicitly chose a server (e.g., "na-1-ws").
+            server = next(s for s in servers if s["id"] == node_id)
+        else:
+            # Default: weighted random from Reality-only servers (exclude -ws).
+            reality_servers = [s for s in servers if not s["id"].endswith("-ws")]
+            if not reality_servers:
+                reality_servers = servers
+            server = _pick_server(reality_servers, last_server_id=getattr(xray_proxy, "_last_server", None))
 
-    if ws:
-        # Prefer WebSocket transport (direct to node IP, TLS with LE cert).
-        config = generate_xray_config(
-            node_ip=ws["address"],
-            node_port=ws.get("port", 443),
-            uuid=connect_resp["xray_uuid"],
-            flow="",
-            ws_path=ws["path"],
-            ws_host=ws.get("host", ""),
-        )
+        ws = server.get("ws")
+        if ws:
+            # WS transport (e.g., -ws server via CF).
+            config = generate_xray_config(
+                node_ip=ws.get("host", server["address"]),
+                node_port=server.get("port", 443),
+                uuid=connect_resp["xray_uuid"],
+                flow="",
+                ws_path=ws["path"],
+                ws_host=ws.get("host", ""),
+            )
+            node_display = f"{server.get('name', server['id'])} (WS via CF)"
+        else:
+            # Reality transport (default).
+            sni = random.choice(server.get("snis", ["dl.google.com"]))
+            config = generate_xray_config(
+                node_ip=server["address"],
+                node_port=server.get("port", 443),
+                uuid=connect_resp["xray_uuid"],
+                flow="xtls-rprx-vision",
+                reality_public_key=server["reality_public_key"],
+                reality_short_id=server["reality_short_id"],
+                reality_sni=sni,
+            )
+            node_display = f"{server.get('name', server['id'])} (SNI: {sni})"
+        xray_proxy._last_server = server["id"]
     else:
-        # Fallback to Reality transport.
-        config = generate_xray_config(
-            node_ip=vless["address"],
-            node_port=vless["port"],
-            uuid=connect_resp["xray_uuid"],
-            flow=vless.get("flow", "xtls-rprx-vision"),
-            reality_public_key=vless["reality_public_key"],
-            reality_short_id=vless["reality_short_id"],
-            reality_sni=vless.get("reality_sni", "dl.google.com"),
-        )
+        # Legacy single-node format (backward compat)
+        vless = connect_resp.get("vless", {})
+        ws = connect_resp.get("ws")
+        if ws:
+            config = generate_xray_config(
+                node_ip=ws["address"],
+                node_port=ws.get("port", 443),
+                uuid=connect_resp["xray_uuid"],
+                flow="",
+                ws_path=ws["path"],
+                ws_host=ws.get("host", ""),
+            )
+        else:
+            config = generate_xray_config(
+                node_ip=vless["address"],
+                node_port=vless["port"],
+                uuid=connect_resp["xray_uuid"],
+                flow=vless.get("flow", "xtls-rprx-vision"),
+                reality_public_key=vless["reality_public_key"],
+                reality_short_id=vless["reality_short_id"],
+                reality_sni=vless.get("reality_sni", "dl.google.com"),
+            )
+        node_display = connect_resp.get("node_id", "unknown")
 
-    xray_proxy.start(config, connect_resp.get("node_id", node_id))
+    xray_proxy.start(config, node_display)
     managed_proxy.set_mode("tunnel")
     pac_path = generate_pac_file()
 
@@ -261,7 +308,7 @@ def _handle_connect(node_id: str) -> str:
     quota_line = f"Quota: {quota.get('used_bytes', 0) // (1024**3)}GB / {quota.get('limit_bytes', 0) // (1024**3)}GB"
 
     lines = [
-        f"Connected to {connect_resp.get('node_id', 'unknown')}. Use vpn_fetch(url) to make requests through VPN.",
+        f"Connected to {node_display}. Use vpn_fetch(url) to make requests through VPN.",
         "",
         f"  {quota_line}",
         "",
