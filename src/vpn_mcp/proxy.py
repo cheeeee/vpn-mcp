@@ -90,13 +90,49 @@ def download_xray() -> Path:
 
 
 def generate_xray_config(
-    node_ip: str, node_port: int, uuid: str, flow: str, reality_public_key: str, reality_short_id: str, reality_sni: str
+    node_ip: str,
+    node_port: int,
+    uuid: str,
+    flow: str,
+    reality_public_key: str = "",
+    reality_short_id: str = "",
+    reality_sni: str = "",
+    ws_path: str = "",
+    ws_host: str = "",
 ) -> dict:
-    """Generate xray JSON config with SOCKS5 inbound and VLESS+Reality outbound.
+    """Generate xray JSON config with SOCKS5 inbound and VLESS outbound.
 
-    The MCP server runs its own HTTP CONNECT proxy on http_proxy_port.
-    xray only needs SOCKS5 for the MCP proxy to tunnel through.
+    Supports two transports:
+    - WS (WebSocket + TLS): when ws_path is set
+    - Reality (XTLS-Vision): fallback when ws_path is empty
     """
+    if ws_path:
+        stream_settings: dict = {
+            "network": "ws",
+            "security": "tls",
+            "wsSettings": {
+                "path": ws_path,
+                "headers": {"Host": ws_host or node_ip},
+            },
+            "tlsSettings": {
+                "serverName": ws_host or node_ip,
+                "fingerprint": "chrome",
+            },
+        }
+        vless_flow = ""  # WS transport does not use XTLS flow
+    else:
+        stream_settings = {
+            "network": "tcp",
+            "security": "reality",
+            "realitySettings": {
+                "serverName": reality_sni,
+                "publicKey": reality_public_key,
+                "shortId": reality_short_id,
+                "fingerprint": "chrome",
+            },
+        }
+        vless_flow = flow
+
     return {
         "log": {"loglevel": "warning"},
         "inbounds": [
@@ -117,20 +153,11 @@ def generate_xray_config(
                         {
                             "address": node_ip,
                             "port": node_port,
-                            "users": [{"id": uuid, "flow": flow, "encryption": "none"}],
+                            "users": [{"id": uuid, "flow": vless_flow, "encryption": "none"}],
                         }
                     ]
                 },
-                "streamSettings": {
-                    "network": "tcp",
-                    "security": "reality",
-                    "realitySettings": {
-                        "serverName": reality_sni,
-                        "publicKey": reality_public_key,
-                        "shortId": reality_short_id,
-                        "fingerprint": "chrome",
-                    },
-                },
+                "streamSettings": stream_settings,
             }
         ],
     }

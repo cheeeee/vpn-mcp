@@ -227,15 +227,29 @@ def _handle_connect(node_id: str) -> str:
         return f"Connection error: {connect_resp['error']}"
 
     vless = connect_resp.get("vless", {})
-    config = generate_xray_config(
-        node_ip=vless["address"],
-        node_port=vless["port"],
-        uuid=connect_resp["xray_uuid"],
-        flow=vless.get("flow", "xtls-rprx-vision"),
-        reality_public_key=vless["reality_public_key"],
-        reality_short_id=vless["reality_short_id"],
-        reality_sni=vless.get("reality_sni", "dl.google.com"),
-    )
+    ws = connect_resp.get("ws")
+
+    if ws:
+        # Prefer WebSocket transport (direct to node IP, TLS with LE cert).
+        config = generate_xray_config(
+            node_ip=ws["address"],
+            node_port=ws.get("port", 443),
+            uuid=connect_resp["xray_uuid"],
+            flow="",
+            ws_path=ws["path"],
+            ws_host=ws.get("host", ""),
+        )
+    else:
+        # Fallback to Reality transport.
+        config = generate_xray_config(
+            node_ip=vless["address"],
+            node_port=vless["port"],
+            uuid=connect_resp["xray_uuid"],
+            flow=vless.get("flow", "xtls-rprx-vision"),
+            reality_public_key=vless["reality_public_key"],
+            reality_short_id=vless["reality_short_id"],
+            reality_sni=vless.get("reality_sni", "dl.google.com"),
+        )
 
     xray_proxy.start(config, connect_resp.get("node_id", node_id))
     managed_proxy.set_mode("tunnel")
