@@ -197,42 +197,24 @@ def _handle_connect(node_id: str) -> str:
 
     client = ControlPlaneClient(creds)
 
-    # Check account status.
-    status_resp = client.status()
-    status = status_resp.get("status")
-
-    if status == "pending_payment":
-        payment = status_resp.get("payment", {})
-        return _payment_instructions(
-            payment.get("address", "unknown"), payment.get("amount", "1"), payment.get("network", "TON")
-        )
-
-    if status == "expired":
-        return "Account expired. Call vpn_activate() to purchase again."
-
-    if status == "quota_exceeded":
-        quota = status_resp.get("quota", {})
-        return (
-            f"Quota exceeded ({quota.get('used_bytes', 0) // (1024**3)}GB / "
-            f"{quota.get('limit_bytes', 0) // (1024**3)}GB). Call vpn_activate() to purchase more."
-        )
-
-    if status != "active":
-        return f"Account status: {status}. Call vpn_activate() if you need a new account."
-
     # Ensure xray binary is installed.
     try:
         get_xray_binary()
     except RuntimeError:
         download_xray()
 
-    # Connect to node.
+    # Connect to node — server checks status/quota/expiry and returns errors directly.
     connect_resp = client.connect(node_id)
     if "error" in connect_resp:
-        if connect_resp["error"] == "quota_exceeded":
+        err = connect_resp["error"]
+        if err == "quota_exceeded":
             quota = connect_resp.get("quota", {})
             return f"Quota exceeded ({quota.get('percent', 100)}%). Call vpn_activate() to purchase more."
-        return f"Connection error: {connect_resp['error']}"
+        if err == "payment required":
+            return "Payment required. Call vpn_activate() for payment instructions."
+        if err == "account expired":
+            return "Account expired. Call vpn_activate() to purchase again."
+        return f"Connection error: {err}"
 
     # Parse server list (new format) or fall back to legacy single-node format.
     servers = connect_resp.get("servers")
